@@ -1,0 +1,23 @@
+#!/bin/bash -x
+
+dnf install -y net-tools vim nano epel-release wget curl tcpdump chrony
+timedatectl set-timezone America/Sao_Paulo
+
+## Configure o chrony (NTP) para corrigir data e hora
+systemctl enable --now chronyd
+chronyc sources
+service chronyd restart
+
+## Desabilitar SELINUX
+sed -i 's/SELINUX=enforcing/SELINUX=permissive /g' /etc/selinux/config
+setenforce 0
+
+firewall-offline-cmd --permanent --add-port=3306/tcp
+firewall-offline-cmd --permanent --add-service=ntp
+firewall-offline-cmd --add-service=http
+
+systemctl enable  firewalld
+systemctl restart  firewalld
+
+touch ~opc/userdata.`date +%s`.finish
+echo '################### webserver userdata ends #######################'

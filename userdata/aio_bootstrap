@@ -1,0 +1,85 @@
+#!/bin/bash
+#output: { all: "| tee -a /var/log/cloud-init-output.log" }
+#exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+
+sudo timedatectl set-timezone America/Sao_Paulo
+echo "########## data ###############"
+date
+
+echo "########## yum update all ###############"
+yum update -y
+
+sudo yum install -y net-tools vim nano epel-release wget curl tcpdump chrony expect
+echo "########## apps instalados ###############"
+
+## Configure o chrony (NTP) para corrigir data e hora
+systemctl enable --now chronyd
+chronyc sources
+service chronyd restart
+ntpdate
+
+## Desabilitar SELINUX
+sed -i 's/SELINUX=enforcing/SELINUX=permissive /g' /etc/selinux/config
+setenforce 0
+
+## Instalando MySQL
+rpm -Uvh https://repo.mysql.com/mysql80-community-release-el7-3.noarch.rpm
+
+sudo yum -y install mysql-server
+systemctl enable --now mysqld
+systemctl status mysqld
+
+mysqlroot=$(grep 'temporary password' /var/log/mysqld.log | awk -F' ' '{print $13}')
+
+mysqlinstall=$(expect -c "
+  spawn -ignore HUP mysql_secure_installation -u root -p$mysqlroot
+  expect \"New password:\"
+  send \"Z4bb1x5#2o2o\r\"
+  expect \"Re-enter new password:\"
+  send \"Z4bb1x5#2o2o\r\"
+  expect \"Change the password for root ?\r\"  
+  send \"n\r\"
+  Remove anonymous users?
+  send \"y\r\"
+  Disallow root login remotely?
+  send \"y\r\"
+  Remove test database and access to it?
+  send \"y\r\"
+  Reload privilege tables now?
+  send \"y\r\"
+  expect eof
+")
+
+# Precisa montar um comando, talvez usando expect
+mysql -u root -pZ4bb1x5#2o2o
+create database zabbix character set utf8 collate utf8_bin;
+create user 'zabbix'@'localhost' identified by 'Curso#Zabbix5';
+grant all privileges on zabbix.* to 'zabbix'@'localhost';
+flush privileges;
+exit
+
+rpm -ivh http://repo.zabbix.com/zabbix/5.0/rhel/8/x86_64/zabbix-release-5.0-1.el8.noarch.rpm
+
+yum clean all
+yum -y install zabbix-server --skip-broken
+
+zcat /usr/share/doc/zabbix-server-mysql/create.sql.gz | mysql -uzabbix -pCurso#Zabbix5
+
+sed -i 's/#DBPassword=/DBPassword=Curso!Zabbix5/g' /etc/zabbix/zabbix_server.conf
+
+systemctl enable --now zabbix-server
+systemctl status zabbix-server
+
+yum -y install zabbix-web-mysql zabbix-apache-conf
+
+sed -i 's/; php_value[date.timezone] = Europe/Riga/php_value[date.timezone] = America/Sao_Paulo/g' /etc/php-fpm.d/zabbix.conf
+
+systemctl enable --now httpd php-fpm
+systemctl status httpd php-fpm
+
+firewall-offline-cmd --permanent --add-port=3306/tcp
+firewall-offline-cmd --permanent --add-service=ntp
+firewall-offline-cmd --permanent --add-port=80/tcp
+
+systemctl enable  firewalld
+systemctl restart  firewalld

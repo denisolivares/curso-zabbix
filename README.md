@@ -57,9 +57,8 @@ dnf info mysql-server
 dnf -y install mysql-server
 systemctl enable --now mysqld
 systemctl status mysqld
-mysql_secure_installation 
 
-Z4bb1x5!2o2o
+mysql_secure_installation && Z4bb1x5!2o2o && y && y && y && y && y && y
 
 mysql -u root -p
 create database zabbix character set utf8 collate utf8_bin;
